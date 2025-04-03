@@ -34,16 +34,16 @@ warnings.filterwarnings("ignore", message="No type mapping for JDBC type")
 if not jpype.isJVMStarted():
     jpype.startJVM(jvm_path, f"-Djava.class.path={jdbc_driver_path}{os.pathsep}{bson_driver_path}", convertStrings=True)
 
-# Parâmetros de conexão do servidor de produção
-prod_config = {
-    'servidor': "IP_SERVIDOR_PROD", 'porta': "PORTA_PROD", 'banco': "NOME_BANCO_PROD",
-    'usuario': "USUARIO_PROD", 'senha': "SENHA_PROD", 'informixserver': "SERVIDOR_PROD"
+# Parâmetros de conexão do servidor de cópia
+copia_config = {
+    'servidor': "IP_SERVIDOR_COPIA", 'porta': "PORTA_COPIA", 'banco': "NOME_BANCO_COPIA",
+    'usuario': "USUARIO_COPIA", 'senha': "SENHA_COPIA", 'informixserver': "SERVIDOR_COPIA"
 }
 
-# Parâmetros de conexão do servidor de homologação
-homolog_config = {
-    'servidor': "IP_SERVIDOR_HOMOLOG", 'porta': "PORTA_HOMOLOG", 'banco': "NOME_BANCO_HOMOLOG",
-    'usuario': "USUARIO_HOMOLOG", 'senha': "SENHA_HOMOLOG", 'informixserver': "SERVIDOR_HOMOLOG"
+# Parâmetros de conexão do servidor de destino
+destino_config = {
+    'servidor': "IP_SERVIDOR_DESTINO", 'porta': "PORTA_DESTINO", 'banco': "NOME_BANCO_DESTINO",
+    'usuario': "USUARIO_DESTINO", 'senha': "SENHA_DESTINO", 'informixserver': "SERVIDOR_DESTINO"
 }
 
 # Lista de tabelas para clonar - adicione ou remova tabelas conforme necessário
@@ -71,34 +71,34 @@ def conectar_db(config):
         estatisticas['erros'].append(f"Erro ao conectar ao servidor {config['servidor']}: {str(e)}")
         raise
 
-def obter_tabelas_para_clonar(conn_prod, conn_homolog):
+def obter_tabelas_para_clonar(conn_copia, conn_destino):
     """Verifica quais tabelas da lista existem em ambos os ambientes"""
-    cursor_prod = conn_prod.cursor()
-    cursor_homolog = conn_homolog.cursor()
+    cursor_copia = conn_copia.cursor()
+    cursor_destino = conn_destino.cursor()
     
     try:
-        # Verifica quais tabelas da lista existem na produção
+        # Verifica quais tabelas da lista existem na cópia
         placeholders = ','.join([f"'{tabela}'" for tabela in TABELAS_PARA_CLONAR])
-        cursor_prod.execute(f"SELECT tabname FROM systables WHERE tabtype = 'T' AND owner = 'informix' AND tabname IN ({placeholders})")
-        tabelas_prod = [row[0] for row in cursor_prod.fetchall()]
+        cursor_copia.execute(f"SELECT tabname FROM systables WHERE tabtype = 'T' AND owner = 'informix' AND tabname IN ({placeholders})")
+        tabelas_copia = [row[0] for row in cursor_copia.fetchall()]
         
-        if not tabelas_prod:
-            logging.warning("Nenhuma das tabelas especificadas foi encontrada no ambiente de produção!")
+        if not tabelas_copia:
+            logging.warning("Nenhuma das tabelas especificadas foi encontrada no ambiente de cópia!")
             return []
         
-        # Verifica quais dessas tabelas existem na homologação
-        placeholders = ','.join([f"'{tabela}'" for tabela in tabelas_prod])
-        cursor_homolog.execute(f"SELECT tabname FROM systables WHERE tabtype = 'T' AND owner = 'informix' AND tabname IN ({placeholders})")
-        tabelas_homolog = [row[0] for row in cursor_homolog.fetchall()]
+        # Verifica quais dessas tabelas existem no destino
+        placeholders = ','.join([f"'{tabela}'" for tabela in tabelas_copia])
+        cursor_destino.execute(f"SELECT tabname FROM systables WHERE tabtype = 'T' AND owner = 'informix' AND tabname IN ({placeholders})")
+        tabelas_destino = [row[0] for row in cursor_destino.fetchall()]
         
-        return tabelas_homolog
+        return tabelas_destino
     except Exception as e:
         logging.error(f"Erro ao obter tabelas para clonar: {str(e)}")
         estatisticas['erros'].append(f"Erro ao obter tabelas para clonar: {str(e)}")
         raise
     finally:
-        cursor_prod.close()
-        cursor_homolog.close()
+        cursor_copia.close()
+        cursor_destino.close()
 
 def gerar_hash_registro(registro):
     """Gera um hash único para um registro baseado em seus valores"""
@@ -205,23 +205,23 @@ def inserir_dados(conn, tabela, dados, colunas):
             pass
         cursor.close()
 
-def copiar_tabela(tabela, conn_prod, conn_homolog):
-    """Copia os últimos registros da tabela de produção para homologação"""
+def copiar_tabela(tabela, conn_copia, conn_destino):
+    """Copia os últimos registros da tabela de cópia para destino"""
     try:
         print(f"Copiando tabela: {tabela}...")
         
         # Obtém os últimos registros da tabela de origem
-        dados, colunas = obter_ultimos_registros(conn_prod, tabela, 100)
+        dados, colunas = obter_ultimos_registros(conn_copia, tabela, 100)
         
         if not dados:
             logging.info(f"Nenhum dado encontrado na tabela {tabela}")
             return 0
         
         # Verifica quais registros já existem no destino
-        novos_dados = verificar_registros_existentes(conn_homolog, tabela, dados, colunas)
+        novos_dados = verificar_registros_existentes(conn_destino, tabela, dados, colunas)
         
         # Insere os novos dados na tabela de destino
-        registros_inseridos = inserir_dados(conn_homolog, tabela, novos_dados, colunas)
+        registros_inseridos = inserir_dados(conn_destino, tabela, novos_dados, colunas)
         
         print(f"  - {registros_inseridos} registros inseridos")
         return registros_inseridos
@@ -269,12 +269,12 @@ def main():
     print(f"Tabelas selecionadas: {', '.join(TABELAS_PARA_CLONAR)}")
     
     try:
-        # Conecta aos bancos de dados de produção e homologação
-        conn_prod = conectar_db(prod_config)
-        conn_homolog = conectar_db(homolog_config)
+        # Conecta aos bancos de dados de cópia e destino
+        conn_copia = conectar_db(copia_config)
+        conn_destino = conectar_db(destino_config)
         
         # Obtém as tabelas que existem em ambos os ambientes
-        tabelas_para_clonar = obter_tabelas_para_clonar(conn_prod, conn_homolog)
+        tabelas_para_clonar = obter_tabelas_para_clonar(conn_copia, conn_destino)
         estatisticas['tabelas_processadas'] = len(tabelas_para_clonar)
         
         if not tabelas_para_clonar:
@@ -282,11 +282,11 @@ def main():
         else:
             # Processa cada tabela encontrada
             for tabela in tabelas_para_clonar:
-                copiar_tabela(tabela, conn_prod, conn_homolog)
+                copiar_tabela(tabela, conn_copia, conn_destino)
             
         # Fecha as conexões com os bancos de dados
-        conn_prod.close()
-        conn_homolog.close()
+        conn_copia.close()
+        conn_destino.close()
         
     except Exception as e:
         estatisticas['erros'].append(f"Erro crítico: {str(e)}")

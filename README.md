@@ -1,12 +1,13 @@
 # Projeto de Sincronização de Dados Informix
 
 ## Descrição
-Este projeto é uma ferramenta de sincronização de dados entre bancos de dados Informix. Ele copia os registros mais recentes de tabelas específicas do banco de cópia para o banco de destino, evitando duplicações.
+Este projeto é uma ferramenta de sincronização de dados entre bancos de dados Informix. Ele copia os registros mais recentes de tabelas específicas do banco de cópia para o banco de destino, evitando duplicações, e também permite a exclusão de registros antigos do banco de destino.
 
 ## Funcionalidades Principais
 - Conexão com bancos de dados Informix usando JDBC
 - Cópia seletiva de dados entre ambientes
 - Verificação de registros existentes para evitar duplicações
+- Exclusão de registros com mais de 6 meses no banco de destino (com confirmação via console)
 - Geração de logs detalhados e relatórios de execução
 
 ## Tecnologias Utilizadas
@@ -33,7 +34,8 @@ O script irá:
 1. Conectar-se aos bancos de dados de cópia e destino
 2. Identificar as tabelas disponíveis para cópia
 3. Copiar os dados mais recentes de cada tabela
-4. Gerar um relatório detalhado da operação
+4. Solicitar confirmação para exclusão de dados antigos (mais de 6 meses) do banco de destino
+5. Gerar um relatório detalhado da operação
 
 ## Estrutura do Projeto
 - `nome_do_script.py`: Script principal contendo toda a lógica de sincronização
@@ -41,9 +43,9 @@ O script irá:
 
 ## Considerações de Segurança
 - As credenciais de banco de dados estão diretamente no código. Para um ambiente de produção, considere usar variáveis de ambiente ou um arquivo de configuração seguro.
+- A exclusão de dados antigos requer confirmação manual para evitar perda acidental de dados.
 
 ## Contribuições
 Contribuições são bem-vindas. Por favor, abra uma issue para discutir mudanças propostas antes de submeter um pull request.
 
-
-Última atualização: 3 de abril de 2025
+Última atualização: 4 de abril de 2025
